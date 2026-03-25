@@ -34,11 +34,6 @@ const SheetIcon = () => (
   </svg>
 );
 
-const HistoryIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
-  </svg>
-);
 
 const DownloadIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -48,7 +43,7 @@ const DownloadIcon = () => (
 
 // Types
 type Status = 'OUT' | 'IN';
-type LogType = 'TIME_IN' | 'TIME_OUT';
+type LogType = 'TIME_IN' | 'TIME_OUT' | 'ABSENT' | 'HOLIDAY';
 
 interface Log {
   id: string;
@@ -80,6 +75,7 @@ function App() {
 
   // Manual Entry State
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualType, setManualType] = useState<'SHIFT' | 'ABSENT' | 'HOLIDAY'>('SHIFT');
   const [manualDate, setManualDate] = useState('');
   const [manualTimeIn, setManualTimeIn] = useState('');
   const [manualTimeOut, setManualTimeOut] = useState('');
@@ -105,7 +101,9 @@ function App() {
           .eq('user_id', currentUser.id)
           .order('timestamp', { ascending: false });
 
-        if (data) {
+        if (error) {
+          console.error('Error fetching logs:', error.message);
+        } else if (data) {
           setLogs(data);
           if (data.length > 0) {
             setStatus(data[0].type === 'TIME_IN' ? 'IN' : 'OUT');
@@ -231,39 +229,61 @@ function App() {
 
   const handleManualSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!manualDate || !manualTimeIn || !manualTimeOut) {
-      alert('Please fill out all fields.');
+    if (!manualDate) {
+      alert('Please select a date.');
+      return;
+    }
+
+    if (manualType === 'SHIFT' && !manualTimeIn && !manualTimeOut) {
+      alert('Please fill out at least one time field (Time In or Time Out).');
       return;
     }
     
     const targetDate = new Date(`${manualDate}T12:00:00`); 
-    if (targetDate.toLocaleDateString() === new Date().toLocaleDateString()) {
-      alert('Cannot manually enter logs for today. Please use the main buttons.');
-      return;
-    }
-
     const targetDateStr = targetDate.toLocaleDateString();
-    const exists = logs.some(log => new Date(log.timestamp).toLocaleDateString() === targetDateStr);
-    
-    if (exists) {
+
+    const existingIn = logs.some(log => new Date(log.timestamp).toLocaleDateString() === targetDateStr && log.type === 'TIME_IN');
+    const existingOut = logs.some(log => new Date(log.timestamp).toLocaleDateString() === targetDateStr && log.type === 'TIME_OUT');
+    const existingSpecial = logs.some(log => new Date(log.timestamp).toLocaleDateString() === targetDateStr && (log.type === 'ABSENT' || log.type === 'HOLIDAY'));
+
+    if (manualType !== 'SHIFT' && (existingIn || existingOut || existingSpecial)) {
       alert('A record already exists for this exact date.');
       return;
     }
 
-    const timeInDate = new Date(`${manualDate}T${manualTimeIn}`);
-    const timeOutDate = new Date(`${manualDate}T${manualTimeOut}`);
+    if (manualType === 'SHIFT') {
+      if (manualTimeIn && existingIn) {
+        alert('A Time In record already exists for this date.');
+        return;
+      }
+      if (manualTimeOut && existingOut) {
+        alert('A Time Out record already exists for this date.');
+        return;
+      }
+    }
+
+    let timeInDate = null;
+    let timeOutDate = null;
+
+    if (manualType === 'SHIFT' && manualTimeIn) timeInDate = new Date(`${manualDate}T${manualTimeIn}`);
+    if (manualType === 'SHIFT' && manualTimeOut) timeOutDate = new Date(`${manualDate}T${manualTimeOut}`);
     
-    if (timeOutDate <= timeInDate) {
+    if (timeInDate && timeOutDate && timeOutDate <= timeInDate) {
       alert('Your Time Out must be after your Time In.');
       return;
     }
 
     setLoadingMode(true);
     
-    const dbIn = { user_id: currentUser!.id, type: 'TIME_IN', timestamp: timeInDate.toISOString() };
-    const dbOut = { user_id: currentUser!.id, type: 'TIME_OUT', timestamp: timeOutDate.toISOString() };
+    const insertsData = [];
+    if (manualType === 'SHIFT') {
+      if (timeInDate) insertsData.push({ user_id: currentUser!.id, type: 'TIME_IN', timestamp: timeInDate.toISOString() });
+      if (timeOutDate) insertsData.push({ user_id: currentUser!.id, type: 'TIME_OUT', timestamp: timeOutDate.toISOString() });
+    } else {
+      insertsData.push({ user_id: currentUser!.id, type: manualType, timestamp: targetDate.toISOString() });
+    }
 
-    const { data, error } = await supabase.from('logs').insert([dbIn, dbOut]).select();
+    const { data, error } = await supabase.from('logs').insert(insertsData).select();
     
     if (error) {
       alert('Failed to save manual log to cloud: ' + error.message);
@@ -296,34 +316,123 @@ function App() {
     
     const sortedLogs = [...filteredLogs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     const pairedData = [];
-    let currentPair: { date: string, timeIn: string, timeOut: string } | null = null;
+    let currentPair: { date: string, timeIn: string, timeOut: string, rawIn: Date | null, rawOut: Date | null } | null = null;
+
+    const buildOutput = (pair: any) => {
+      let totalHours = '-';
+      if (pair.rawIn && pair.rawOut) {
+        let breakTimeMs = 0;
+        const lunchStart = new Date(pair.rawIn);
+        lunchStart.setHours(12, 0, 0, 0);
+        const lunchEnd = new Date(pair.rawIn);
+        lunchEnd.setHours(13, 0, 0, 0);
+
+        const overlapStart = Math.max(pair.rawIn.getTime(), lunchStart.getTime());
+        const overlapEnd = Math.min(pair.rawOut.getTime(), lunchEnd.getTime());
+
+        if (overlapEnd > overlapStart) {
+          breakTimeMs = overlapEnd - overlapStart;
+        }
+
+        const workMs = (pair.rawOut.getTime() - pair.rawIn.getTime()) - breakTimeMs;
+        let finalHoursNum = workMs / (1000 * 60 * 60);
+        
+        // Special rule: If it's Saturday and they rendered >= 3 hours, max it out precisely to 8 hours
+        if (pair.rawIn.getDay() === 6 && finalHoursNum >= 3) {
+          finalHoursNum = 8;
+        }
+
+        totalHours = finalHoursNum.toFixed(2);
+      }
+      return {
+        id: crypto.randomUUID(),
+        date: pair.date,
+        timeIn: pair.timeIn,
+        lunchOut: '12:00 PM',
+        lunchIn: '01:00 PM',
+        timeOut: pair.timeOut,
+        totalHours
+      };
+    };
 
     for (const log of sortedLogs) {
       const dateStr = formatDate(log.timestamp);
       const timeStr = formatTime(log.timestamp, false);
+      const logDate = new Date(log.timestamp);
       
       if (log.type === 'TIME_IN') {
         if (currentPair) {
-          pairedData.push({ id: crypto.randomUUID(), ...currentPair });
+          pairedData.push(buildOutput(currentPair));
         }
-        currentPair = { date: dateStr, timeIn: timeStr, timeOut: '-' };
+        currentPair = { date: dateStr, timeIn: timeStr, timeOut: '-', rawIn: logDate, rawOut: null };
       } else if (log.type === 'TIME_OUT') {
         if (currentPair && currentPair.date === dateStr) {
           currentPair.timeOut = timeStr;
-          pairedData.push({ id: crypto.randomUUID(), ...currentPair });
+          currentPair.rawOut = logDate;
+          pairedData.push(buildOutput(currentPair));
           currentPair = null;
         } else {
-          if (currentPair) pairedData.push({ id: crypto.randomUUID(), ...currentPair });
-          pairedData.push({ id: crypto.randomUUID(), date: dateStr, timeIn: '-', timeOut: timeStr });
+          if (currentPair) pairedData.push(buildOutput(currentPair));
+          pairedData.push(buildOutput({ date: dateStr, timeIn: '-', timeOut: timeStr, rawIn: null, rawOut: logDate }));
           currentPair = null;
         }
+      } else if (log.type === 'ABSENT' || log.type === 'HOLIDAY') {
+        if (currentPair) pairedData.push(buildOutput(currentPair));
+        pairedData.push({
+          id: crypto.randomUUID(),
+          date: dateStr,
+          timeIn: log.type,
+          lunchOut: '-',
+          lunchIn: '-',
+          timeOut: '-',
+          totalHours: '-'
+        });
+        currentPair = null;
       }
     }
     if (currentPair) {
-      pairedData.push({ id: crypto.randomUUID(), ...currentPair });
+      pairedData.push(buildOutput(currentPair));
     }
 
-    return pairedData;
+    // Auto-fill missing days with 'Absent / Holiday'
+    const finalData: any[] = [];
+    const minRawDate = sortedLogs.length > 0 ? new Date(sortedLogs[0].timestamp) : null;
+    const start = exportStartDate ? new Date(exportStartDate) : minRawDate;
+    
+    // Always stop at today natively unless exportEndDate is earlier
+    const end = exportEndDate ? new Date(exportEndDate) : new Date();
+    
+    if (start && end) {
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      
+      let cursor = new Date(start);
+      const now = new Date();
+      
+      while (cursor <= end && cursor <= now) {
+        const dStr = formatDate(cursor);
+        const dayMatches = pairedData.filter(p => p.date === dStr);
+        
+        if (dayMatches.length > 0) {
+          finalData.push(...dayMatches);
+        } else {
+          // If the day is empty, logically mark as absent. (Mark Sundays formally as REST DAY)
+          const isSunday = cursor.getDay() === 0;
+          finalData.push({
+            id: crypto.randomUUID(),
+            date: dStr,
+            timeIn: isSunday ? 'REST DAY' : 'ABSENT',
+            lunchOut: '-',
+            lunchIn: '-',
+            timeOut: '-',
+            totalHours: '-'
+          });
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+    }
+
+    return finalData;
   }, [logs, exportStartDate, exportEndDate]);
 
   const exportCSV = () => {
@@ -333,8 +442,8 @@ function App() {
       return;
     }
 
-    const headers = ['Date', 'Time In', 'Time Out'];
-    const rows = filteredAndPairedLogs.map(row => [row.date, row.timeIn, row.timeOut]);
+    const headers = ['Date', 'Time In', 'L-Out', 'L-In', 'Time Out', 'Hours'];
+    const rows = filteredAndPairedLogs.map(row => [row.date, row.timeIn, row.lunchOut, row.lunchIn, row.timeOut, row.totalHours]);
     
     const escapeCSV = (field: string) => `"${field.replace(/"/g, '""')}"`;
 
@@ -381,12 +490,12 @@ function App() {
 
     doc.text(`Period: ${displayStart} to ${displayEnd}`, 14, 39);
 
-    const tableData = filteredAndPairedLogs.map(row => [row.date, row.timeIn, row.timeOut]);
+    const tableData = filteredAndPairedLogs.map(row => [row.date, row.timeIn, row.lunchOut, row.lunchIn, row.timeOut, row.totalHours]);
 
     // Render table
     autoTable(doc, {
       startY: 45,
-      head: [['Date', 'Time In', 'Time Out']],
+      head: [['Date', 'Time In', 'L-Out', 'L-In', 'Time Out', 'Hours']],
       body: tableData,
       theme: 'grid',
       headStyles: { fillColor: [79, 70, 229] },
@@ -485,23 +594,42 @@ function App() {
 
         {showManualEntry ? (
           <form className="actions" onSubmit={handleManualSubmit} style={{ gap: '0.75rem', padding: '1rem', background: 'rgba(15, 23, 42, 0.4)', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            <div style={{ marginBottom: '0.5rem', fontWeight: 600 }}>Past Day Entry</div>
+            <div style={{ marginBottom: '0.5rem', fontWeight: 600 }}>Manual Entry</div>
             
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+                <input type="radio" name="logType" checked={manualType === 'SHIFT'} onChange={() => setManualType('SHIFT')} /> Shift Log
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+                <input type="radio" name="logType" checked={manualType === 'ABSENT'} onChange={() => setManualType('ABSENT')} /> Absent
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.8rem', cursor: 'pointer' }}>
+                <input type="radio" name="logType" checked={manualType === 'HOLIDAY'} onChange={() => setManualType('HOLIDAY')} /> Holiday
+              </label>
+            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-              <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Date</label>
-              <input type="date" className="date-input" value={manualDate} onChange={e => setManualDate(e.target.value)} required max={new Date(Date.now() - 86400000).toISOString().split('T')[0]} />
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Date <span style={{ color: 'var(--danger)' }}>*</span></label>
+              <input type="date" className="date-input" value={manualDate} onChange={e => setManualDate(e.target.value)} required max={new Date().toISOString().split('T')[0]} />
             </div>
             
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Time In</label>
-                <input type="time" className="date-input" value={manualTimeIn} onChange={e => setManualTimeIn(e.target.value)} required />
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Time Out</label>
-                <input type="time" className="date-input" value={manualTimeOut} onChange={e => setManualTimeOut(e.target.value)} required />
-              </div>
-            </div>
+            {manualType === 'SHIFT' && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Time In</label>
+                    <input type="time" className="date-input" value={manualTimeIn} onChange={e => setManualTimeIn(e.target.value)} />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Time Out</label>
+                    <input type="time" className="date-input" value={manualTimeOut} onChange={e => setManualTimeOut(e.target.value)} />
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '-0.25rem' }}>
+                  Fill out only the time you wish to arbitrarily add.
+                </div>
+              </>
+            )}
 
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
               <button type="button" className="btn btn-out" onClick={() => setShowManualEntry(false)}>
@@ -538,7 +666,7 @@ function App() {
               onClick={() => setShowManualEntry(true)}
             >
               <PlusIcon />
-              Add Missing Past Record
+              Add Missing Record
             </button>
           </div>
         )}
@@ -552,8 +680,7 @@ function App() {
       {/* Right Column: History Panel */}
       <div className="glass-panel history-section">
         <div className="history-actions" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-          <div className="history-header" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem' }}>
-            <HistoryIcon />
+          <div className="history-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2rem' }}>
             <span>Your Records</span>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -613,16 +740,26 @@ function App() {
             <div className="table-header">
               <div>Date</div>
               <div>Time In</div>
+              <div>L-Out</div>
+              <div>L-In</div>
               <div>Time Out</div>
+              <div>Hours</div>
             </div>
-            {[...filteredAndPairedLogs].map((row) => (
+            {[...filteredAndPairedLogs].reverse().map((row) => (
               <div key={row.id} className="table-row">
                 <div className="cell-date">{row.date}</div>
                 <div className={`cell-time ${row.timeIn !== '-' ? 'active' : ''}`}>
                   {row.timeIn}
                 </div>
-                <div className={`cell-time ${row.timeOut === '-' ? 'inactive' : ''}`}>
-                  {row.timeOut === '-' ? 'Pending...' : row.timeOut}
+                <div className="cell-time">{row.lunchOut}</div>
+                <div className="cell-time">{row.lunchIn}</div>
+                <div className={`cell-time ${row.timeOut === '-' && !row.timeIn.includes('ABSENT') && !row.timeIn.includes('REST') && !row.timeIn.includes('HOLIDAY') ? 'inactive' : ''}`}>
+                  {row.timeOut === '-' 
+                    ? (row.timeIn.includes('ABSENT') || row.timeIn.includes('REST') || row.timeIn.includes('HOLIDAY') ? '-' : 'Pending...') 
+                    : row.timeOut}
+                </div>
+                <div className="cell-time" style={{ fontWeight: 'bold' }}>
+                  {row.totalHours !== '-' ? `${row.totalHours} h` : '-'}
                 </div>
               </div>
             ))}
