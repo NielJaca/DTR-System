@@ -342,7 +342,7 @@ function App() {
           finalHoursNum = 8;
         }
 
-        totalHours = finalHoursNum.toFixed(2);
+        totalHours = Math.round(finalHoursNum).toString();
       }
       return {
         id: crypto.randomUUID(),
