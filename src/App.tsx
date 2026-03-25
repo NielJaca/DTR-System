@@ -753,7 +753,7 @@ function App() {
                 </div>
                 <div className="cell-time">{row.lunchOut}</div>
                 <div className="cell-time">{row.lunchIn}</div>
-                <div className={`cell-time ${row.timeOut === '-' && !row.timeIn.includes('ABSENT') && !row.timeIn.includes('REST') && !row.timeIn.includes('HOLIDAY') ? 'inactive' : ''}`}>
+                <div className={`cell-time cell-timeout ${row.timeOut === '-' && !row.timeIn.includes('ABSENT') && !row.timeIn.includes('REST') && !row.timeIn.includes('HOLIDAY') ? 'inactive' : ''}`}>
                   {row.timeOut === '-' 
                     ? (row.timeIn.includes('ABSENT') || row.timeIn.includes('REST') || row.timeIn.includes('HOLIDAY') ? '-' : 'Pending...') 
                     : row.timeOut}

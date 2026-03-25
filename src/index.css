@@ -368,6 +368,11 @@ body {
   color: var(--danger);
 }
 
+.cell-timeout {
+  color: var(--danger);
+  font-weight: 500;
+}
+
 /* SVG icons styling inside buttons */
 .btn svg {
   width: 20px;
