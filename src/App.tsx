@@ -1,0 +1,636 @@
+import { useState, useEffect, useMemo } from 'react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { supabase } from './supabase';
+
+// Icons embedded as SVG components
+const ClockIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+  </svg>
+);
+
+const LogInIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
+  </svg>
+);
+
+const LogOutIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+  </svg>
+);
+
+const PlusIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </svg>
+);
+
+const SheetIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>
+  </svg>
+);
+
+const HistoryIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>
+  </svg>
+);
+
+const DownloadIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+  </svg>
+);
+
+// Types
+type Status = 'OUT' | 'IN';
+type LogType = 'TIME_IN' | 'TIME_OUT';
+
+interface Log {
+  id: string;
+  user_id?: string;
+  type: LogType;
+  timestamp: string; // ISO string 
+}
+
+interface User {
+  id: string;
+  username: string;
+  name: string; 
+}
+
+function App() {
+  // Authentication & Users State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authMode, setAuthMode] = useState<'LOGIN' | 'REGISTER'>('LOGIN');
+  const [usernameInput, setUsernameInput] = useState('');
+  const [nameInput, setNameInput] = useState('');
+  const [loadingMode, setLoadingMode] = useState(false);
+
+  // App State
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [status, setStatus] = useState<Status>('OUT');
+  const [logs, setLogs] = useState<Log[]>([]);
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
+
+  // Manual Entry State
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualDate, setManualDate] = useState('');
+  const [manualTimeIn, setManualTimeIn] = useState('');
+  const [manualTimeOut, setManualTimeOut] = useState('');
+
+  // Session persistence across reloads via localStorage auth token mapping
+  useEffect(() => {
+    const savedSessionId = localStorage.getItem('dtr_session_id');
+    if (savedSessionId) {
+      supabase.from('custom_users').select('*').eq('id', savedSessionId).single().then(({ data }) => {
+        if (data) setCurrentUser(data);
+      });
+    }
+  }, []);
+
+  // When user logs in, load their specific logs from Supabase
+  useEffect(() => {
+    if (currentUser) {
+      localStorage.setItem('dtr_session_id', currentUser.id);
+      const fetchLogs = async () => {
+        const { data, error } = await supabase
+          .from('logs')
+          .select('*')
+          .eq('user_id', currentUser.id)
+          .order('timestamp', { ascending: false });
+
+        if (data) {
+          setLogs(data);
+          if (data.length > 0) {
+            setStatus(data[0].type === 'TIME_IN' ? 'IN' : 'OUT');
+          } else {
+            setStatus('OUT');
+          }
+        }
+      };
+      fetchLogs();
+    } else {
+      localStorage.removeItem('dtr_session_id');
+      setLogs([]);
+      setStatus('OUT');
+    }
+  }, [currentUser]);
+
+  // Clock tick
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatTime = (date: Date | string, includeSeconds = true) => {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return d.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      ...(includeSeconds ? { second: '2-digit' } : {}),
+      hour12: true
+    });
+  };
+
+  const formatDate = (date: Date | string) => {
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return d.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!usernameInput.trim()) return;
+    setLoadingMode(true);
+
+    if (authMode === 'REGISTER') {
+      if (!nameInput.trim()) {
+        alert('Please enter your full name.');
+        setLoadingMode(false);
+        return;
+      }
+      
+      const { data: existing } = await supabase.from('custom_users').select('id').ilike('username', usernameInput.trim());
+      
+      if (existing && existing.length > 0) {
+        alert('Username already exists! Please login instead.');
+      } else {
+        const { data, error } = await supabase.from('custom_users')
+          .insert([{ username: usernameInput.trim(), name: nameInput.trim() }])
+          .select();
+
+        if (error) alert('Database Error: ' + error.message);
+        else if (data) setCurrentUser(data[0]);
+      }
+    } else {
+      const { data, error } = await supabase.from('custom_users')
+        .select('*')
+        .ilike('username', usernameInput.trim());
+
+      if (error) alert('Database Error: ' + error.message);
+      else if (data && data.length > 0) {
+        setCurrentUser(data[0]);
+      } else {
+        alert('User not found. Please register.');
+      }
+    }
+    
+    setLoadingMode(false);
+    setUsernameInput('');
+    setNameInput('');
+  };
+
+  const handleLogout = () => {
+    setCurrentUser(null);
+  };
+
+  // Determine today's limits
+  const todayStr = new Date().toLocaleDateString();
+  const hasTimedInToday = logs.some(log => log.type === 'TIME_IN' && new Date(log.timestamp).toLocaleDateString() === todayStr);
+  const hasTimedOutToday = logs.some(log => log.type === 'TIME_OUT' && new Date(log.timestamp).toLocaleDateString() === todayStr);
+
+  const performCloudInsert = async (newLog: Log, optimisticId: string) => {
+    const dbLog = { user_id: currentUser!.id, type: newLog.type, timestamp: newLog.timestamp };
+    setLogs(prev => [newLog, ...prev]); // Optimistic Update
+
+    const { data, error } = await supabase.from('logs').insert([dbLog]).select();
+    
+    if (error) {
+      alert('Failed to sync to cloud: ' + error.message);
+      // Revert optimistic update
+      setLogs(prev => prev.filter(l => l.id !== newLog.id));
+    } else if (data) {
+      // Overwrite with confirmed DB ID
+      setLogs(prev => prev.map(l => l.id === optimisticId ? { ...l, id: data[0].id } : l));
+    }
+  };
+
+  const handleTimeIn = async () => {
+    if (hasTimedInToday) { alert("You have already timed in today!"); return; }
+    setStatus('IN');
+    const optimisticId = crypto.randomUUID();
+    await performCloudInsert({ id: optimisticId, type: 'TIME_IN', timestamp: new Date().toISOString() }, optimisticId);
+  };
+
+  const handleTimeOut = async () => {
+    if (hasTimedOutToday) { alert("You have already timed out today!"); return; }
+    setStatus('OUT');
+    const optimisticId = crypto.randomUUID();
+    await performCloudInsert({ id: optimisticId, type: 'TIME_OUT', timestamp: new Date().toISOString() }, optimisticId);
+  };
+
+  const handleManualSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualDate || !manualTimeIn || !manualTimeOut) {
+      alert('Please fill out all fields.');
+      return;
+    }
+    
+    const targetDate = new Date(`${manualDate}T12:00:00`); 
+    if (targetDate.toLocaleDateString() === new Date().toLocaleDateString()) {
+      alert('Cannot manually enter logs for today. Please use the main buttons.');
+      return;
+    }
+
+    const targetDateStr = targetDate.toLocaleDateString();
+    const exists = logs.some(log => new Date(log.timestamp).toLocaleDateString() === targetDateStr);
+    
+    if (exists) {
+      alert('A record already exists for this exact date.');
+      return;
+    }
+
+    const timeInDate = new Date(`${manualDate}T${manualTimeIn}`);
+    const timeOutDate = new Date(`${manualDate}T${manualTimeOut}`);
+    
+    if (timeOutDate <= timeInDate) {
+      alert('Your Time Out must be after your Time In.');
+      return;
+    }
+
+    setLoadingMode(true);
+    
+    const dbIn = { user_id: currentUser!.id, type: 'TIME_IN', timestamp: timeInDate.toISOString() };
+    const dbOut = { user_id: currentUser!.id, type: 'TIME_OUT', timestamp: timeOutDate.toISOString() };
+
+    const { data, error } = await supabase.from('logs').insert([dbIn, dbOut]).select();
+    
+    if (error) {
+      alert('Failed to save manual log to cloud: ' + error.message);
+    } else if (data) {
+      // Re-fetch all logs cleanly to ensure sorting
+      const { data: freshData } = await supabase.from('logs').select('*').eq('user_id', currentUser!.id).order('timestamp', { ascending: false });
+      if (freshData) setLogs(freshData);
+      
+      setShowManualEntry(false);
+      setManualDate('');
+      setManualTimeIn('');
+      setManualTimeOut('');
+    }
+    setLoadingMode(false);
+  };
+
+  // Memoized pairing logic for UI & Exports
+  const filteredAndPairedLogs = useMemo(() => {
+    let filteredLogs = [...logs];
+    if (exportStartDate) {
+      const start = new Date(exportStartDate);
+      start.setHours(0, 0, 0, 0);
+      filteredLogs = filteredLogs.filter(log => new Date(log.timestamp) >= start);
+    }
+    if (exportEndDate) {
+      const end = new Date(exportEndDate);
+      end.setHours(23, 59, 59, 999);
+      filteredLogs = filteredLogs.filter(log => new Date(log.timestamp) <= end);
+    }
+    
+    const sortedLogs = [...filteredLogs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+    const pairedData = [];
+    let currentPair: { date: string, timeIn: string, timeOut: string } | null = null;
+
+    for (const log of sortedLogs) {
+      const dateStr = formatDate(log.timestamp);
+      const timeStr = formatTime(log.timestamp, false);
+      
+      if (log.type === 'TIME_IN') {
+        if (currentPair) {
+          pairedData.push({ id: crypto.randomUUID(), ...currentPair });
+        }
+        currentPair = { date: dateStr, timeIn: timeStr, timeOut: '-' };
+      } else if (log.type === 'TIME_OUT') {
+        if (currentPair && currentPair.date === dateStr) {
+          currentPair.timeOut = timeStr;
+          pairedData.push({ id: crypto.randomUUID(), ...currentPair });
+          currentPair = null;
+        } else {
+          if (currentPair) pairedData.push({ id: crypto.randomUUID(), ...currentPair });
+          pairedData.push({ id: crypto.randomUUID(), date: dateStr, timeIn: '-', timeOut: timeStr });
+          currentPair = null;
+        }
+      }
+    }
+    if (currentPair) {
+      pairedData.push({ id: crypto.randomUUID(), ...currentPair });
+    }
+
+    return pairedData;
+  }, [logs, exportStartDate, exportEndDate]);
+
+  const exportCSV = () => {
+    if (!currentUser) return;
+    if (filteredAndPairedLogs.length === 0) {
+      alert('No records found in the selected date range.');
+      return;
+    }
+
+    const headers = ['Date', 'Time In', 'Time Out'];
+    const rows = filteredAndPairedLogs.map(row => [row.date, row.timeIn, row.timeOut]);
+    
+    const escapeCSV = (field: string) => `"${field.replace(/"/g, '""')}"`;
+
+    const csvContent = [
+      headers.map(escapeCSV).join(','),
+      ...rows.map(row => row.map(escapeCSV).join(','))
+    ].join('\n');
+
+    // Add BOM for proper UTF-8 handling in Excel
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `DTR_Export_${currentUser.username}_${new Date().getTime()}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportPDF = () => {
+    if (!currentUser) return;
+    if (filteredAndPairedLogs.length === 0) {
+      alert('No records found in the selected date range.');
+      return;
+    }
+
+    const doc = new jsPDF();
+    
+    // Header
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.text("Daily Time Record", 14, 22);
+    
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    const displayName = currentUser.name || currentUser.username;
+    doc.text(`Employee: ${displayName}`, 14, 32);
+
+    const firstDataDate = filteredAndPairedLogs[0].date;
+    const lastDataDate = filteredAndPairedLogs[filteredAndPairedLogs.length - 1].date;
+    const displayStart = exportStartDate ? new Date(exportStartDate).toLocaleDateString() : firstDataDate;
+    const displayEnd = exportEndDate ? new Date(exportEndDate).toLocaleDateString() : lastDataDate;
+
+    doc.text(`Period: ${displayStart} to ${displayEnd}`, 14, 39);
+
+    const tableData = filteredAndPairedLogs.map(row => [row.date, row.timeIn, row.timeOut]);
+
+    // Render table
+    autoTable(doc, {
+      startY: 45,
+      head: [['Date', 'Time In', 'Time Out']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [79, 70, 229] },
+      alternateRowStyles: { fillColor: [241, 245, 249] },
+    });
+
+    doc.save(`DTR_Export_${currentUser.username}_${new Date().getTime()}.pdf`);
+  };
+
+  if (!currentUser) {
+    return (
+      <div className="dtr-container" style={{ gridTemplateColumns: '1fr' }}>
+        <div className="glass-panel auth-container">
+          <div className="auth-tabs">
+            <button 
+              className={`tab-btn ${authMode === 'LOGIN' ? 'active' : ''}`}
+              onClick={() => { setAuthMode('LOGIN'); setUsernameInput(''); setNameInput(''); }}
+            >
+              Login
+            </button>
+            <button 
+              className={`tab-btn ${authMode === 'REGISTER' ? 'active' : ''}`}
+              onClick={() => { setAuthMode('REGISTER'); setUsernameInput(''); setNameInput(''); }}
+            >
+              Register
+            </button>
+          </div>
+
+          <header className="header" style={{ marginBottom: '2rem' }}>
+            <h1><ClockIcon /> DTR Portal</h1>
+            <p>Please {authMode.toLowerCase()} to continue</p>
+          </header>
+
+          <form onSubmit={handleAuth}>
+            {authMode === 'REGISTER' && (
+              <div className="form-group">
+                <label htmlFor="name">Full Name</label>
+                <input 
+                  type="text" 
+                  id="name"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  placeholder="Enter your full name"
+                  required
+                />
+              </div>
+            )}
+            <div className="form-group">
+              <label htmlFor="username">Username</label>
+              <input 
+                type="text" 
+                id="username"
+                value={usernameInput}
+                onChange={(e) => setUsernameInput(e.target.value)}
+                placeholder="Enter your username"
+                required
+              />
+            </div>
+            <button type="submit" className="btn btn-primary" disabled={loadingMode} style={{ opacity: loadingMode ? 0.7 : 1 }}>
+              <LogInIcon />
+              {loadingMode ? 'Connecting...' : (authMode === 'LOGIN' ? 'Sign In' : 'Create Account')}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="dtr-container">
+      {/* Left Column: Action Panel */}
+      <div className="glass-panel">
+        <div className="top-nav">
+          <div className="user-info">
+            <div className="user-avatar">
+              {(currentUser.name || currentUser.username).charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div className="user-name-display">{currentUser.name || currentUser.username}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>@{currentUser.username}</div>
+            </div>
+          </div>
+          <button className="btn btn-small btn-danger" onClick={handleLogout}>
+            Logout
+          </button>
+        </div>
+
+        <header className="header" style={{ marginBottom: '1.5rem' }}>
+          <h1><ClockIcon /> DTR Portal</h1>
+        </header>
+
+        <div className="clock-display" style={{ margin: '1rem 0 2.5rem' }}>
+          <div className="clock-time">{formatTime(currentTime)}</div>
+          <div className="clock-date">{formatDate(currentTime)}</div>
+        </div>
+
+        {showManualEntry ? (
+          <form className="actions" onSubmit={handleManualSubmit} style={{ gap: '0.75rem', padding: '1rem', background: 'rgba(15, 23, 42, 0.4)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            <div style={{ marginBottom: '0.5rem', fontWeight: 600 }}>Past Day Entry</div>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Date</label>
+              <input type="date" className="date-input" value={manualDate} onChange={e => setManualDate(e.target.value)} required max={new Date(Date.now() - 86400000).toISOString().split('T')[0]} />
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Time In</label>
+                <input type="time" className="date-input" value={manualTimeIn} onChange={e => setManualTimeIn(e.target.value)} required />
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Time Out</label>
+                <input type="time" className="date-input" value={manualTimeOut} onChange={e => setManualTimeOut(e.target.value)} required />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <button type="button" className="btn btn-out" onClick={() => setShowManualEntry(false)}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" style={{ margin: 0 }} disabled={loadingMode}>
+                {loadingMode ? 'Saving...' : 'Save Record'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="actions">
+            <button 
+              className="btn btn-in" 
+              onClick={handleTimeIn}
+              disabled={status === 'IN' || hasTimedInToday}
+            >
+              <LogInIcon />
+              {hasTimedInToday ? "Timed In Today" : "Time In"}
+            </button>
+            
+            <button 
+              className="btn btn-out" 
+              onClick={handleTimeOut}
+              disabled={status === 'OUT' || hasTimedOutToday}
+            >
+              <LogOutIcon />
+              {hasTimedOutToday ? "Timed Out Today" : "Time Out"}
+            </button>
+
+            <button 
+              className="btn btn-out" 
+              style={{ padding: '0.75rem', fontSize: '0.9rem', marginTop: '1rem', borderStyle: 'dashed' }}
+              onClick={() => setShowManualEntry(true)}
+            >
+              <PlusIcon />
+              Add Missing Past Record
+            </button>
+          </div>
+        )}
+
+        <div className="status-badge">
+          <div className={`status-dot ${status === 'IN' ? 'active' : 'inactive'}`}></div>
+          Status: {status === 'IN' ? 'Checked In' : 'Checked Out'}
+        </div>
+      </div>
+
+      {/* Right Column: History Panel */}
+      <div className="glass-panel history-section">
+        <div className="history-actions" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
+          <div className="history-header" style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1rem' }}>
+            <HistoryIcon />
+            <span>Your Records</span>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input 
+                type="date" 
+                className="date-input" 
+                value={exportStartDate} 
+                onChange={e => setExportStartDate(e.target.value)} 
+                title="Start Date"
+              />
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>to</span>
+              <input 
+                type="date" 
+                className="date-input" 
+                value={exportEndDate} 
+                onChange={e => setExportEndDate(e.target.value)} 
+                title="End Date"
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button 
+                className="btn-export" 
+                onClick={exportCSV}
+                disabled={filteredAndPairedLogs.length === 0}
+                style={{ 
+                  opacity: filteredAndPairedLogs.length === 0 ? 0.5 : 1, 
+                  cursor: filteredAndPairedLogs.length === 0 ? 'not-allowed' : 'pointer', 
+                  margin: 0, 
+                  backgroundColor: 'rgba(52, 168, 83, 0.15)', 
+                  color: '#4ade80', 
+                  borderColor: 'rgba(52, 168, 83, 0.25)' 
+                }}
+              >
+                <SheetIcon />
+                Sheets
+              </button>
+              <button 
+                className="btn-export" 
+                onClick={exportPDF}
+                disabled={filteredAndPairedLogs.length === 0}
+                style={{ opacity: filteredAndPairedLogs.length === 0 ? 0.5 : 1, cursor: filteredAndPairedLogs.length === 0 ? 'not-allowed' : 'pointer', margin: 0 }}
+              >
+                <DownloadIcon />
+                PDF
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {filteredAndPairedLogs.length === 0 ? (
+          <div className="empty-state">
+            No records found for this period. Time in to start tracking!
+          </div>
+        ) : (
+          <div className="history-list">
+            <div className="table-header">
+              <div>Date</div>
+              <div>Time In</div>
+              <div>Time Out</div>
+            </div>
+            {[...filteredAndPairedLogs].map((row) => (
+              <div key={row.id} className="table-row">
+                <div className="cell-date">{row.date}</div>
+                <div className={`cell-time ${row.timeIn !== '-' ? 'active' : ''}`}>
+                  {row.timeIn}
+                </div>
+                <div className={`cell-time ${row.timeOut === '-' ? 'inactive' : ''}`}>
+                  {row.timeOut === '-' ? 'Pending...' : row.timeOut}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default App;
