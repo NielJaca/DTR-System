@@ -353,7 +353,11 @@ function App() {
           breakTimeMs = overlapEnd - overlapStart;
         }
 
-        const workMs = (pair.rawOut.getTime() - pair.rawIn.getTime()) - breakTimeMs;
+        const nineAM = new Date(pair.rawIn);
+        nineAM.setHours(9, 0, 0, 0);
+        
+        const effectiveIn = Math.max(pair.rawIn.getTime(), nineAM.getTime());
+        const workMs = Math.max(0, pair.rawOut.getTime() - effectiveIn - breakTimeMs);
         let finalHoursNum = workMs / (1000 * 60 * 60);
 
         // Special rule: If it's Saturday and they rendered >= 3 hours, max it out precisely to 8 hours
@@ -361,8 +365,11 @@ function App() {
           finalHoursNum = 8;
         }
 
-        hoursNum = finalHoursNum;
-        totalHours = Math.round(finalHoursNum).toString();
+        const h = Math.floor(workMs / (1000 * 60 * 60));
+        const m = Math.floor((workMs % (1000 * 60 * 60)) / (1000 * 60));
+
+        hoursNum = workMs / (1000 * 60 * 60);
+        totalHours = `${h}h ${m}m`;
       }
       return {
         id: crypto.randomUUID(),
@@ -462,10 +469,21 @@ function App() {
   }, [logs, exportStartDate, exportEndDate]);
 
   const stats = useMemo(() => {
-    const total = filteredAndPairedLogs.reduce((acc, curr) => acc + (curr.hoursNum || 0), 0);
+    const totalRaw = filteredAndPairedLogs.reduce((acc, curr) => acc + (curr.hoursNum || 0), 0);
     const goal = 540;
-    const remaining = Math.max(0, goal - total);
-    return { total: Math.round(total), remaining: Math.round(remaining), goal };
+    const remainingRaw = Math.max(0, goal - totalRaw);
+    
+    const hT = Math.floor(totalRaw);
+    const mT = Math.round((totalRaw - hT) * 60);
+    const hR = Math.floor(remainingRaw);
+    const mR = Math.round((remainingRaw - hR) * 60);
+
+    return { 
+      total: Math.floor(totalRaw), 
+      formattedTotal: `${hT}h ${mT}m`,
+      formattedRemaining: `${hR}h ${mR}m`,
+      goal 
+    };
   }, [filteredAndPairedLogs]);
 
   const exportCSV = () => {
@@ -729,12 +747,12 @@ function App() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
             <div className="glass-panel" style={{ padding: '1.25rem', textAlign: 'center', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Total Hours</div>
-              <div style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--success)' }}>{stats.total} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>/ {stats.goal}h</span></div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Total Time</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--success)' }}>{stats.formattedTotal} <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-muted)' }}>/ {stats.goal}</span></div>
             </div>
             <div className="glass-panel" style={{ padding: '1.25rem', textAlign: 'center', border: '1px solid rgba(79, 70, 229, 0.2)' }}>
               <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Remaining</div>
-              <div style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--primary)' }}>{stats.remaining} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>h</span></div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--primary)' }}>{stats.formattedRemaining}</div>
             </div>
           </div>
 
@@ -815,7 +833,7 @@ function App() {
                     : row.timeOut}
                 </div>
                 <div className="cell-time" style={{ fontWeight: 'bold' }}>
-                  {row.totalHours !== '-' ? `${row.totalHours} h` : '-'}
+                  {row.totalHours !== '-' ? row.totalHours : '-'}
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                   {row.logIds && row.logIds.length > 0 && (
