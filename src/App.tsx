@@ -41,6 +41,12 @@ const DownloadIcon = () => (
   </svg>
 );
 
+const TrashIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+  </svg>
+);
+
 // Types
 type Status = 'OUT' | 'IN';
 type LogType = 'TIME_IN' | 'TIME_OUT' | 'ABSENT' | 'HOLIDAY';
@@ -300,6 +306,18 @@ function App() {
     setLoadingMode(false);
   };
 
+  const handleDeleteDay = async (logIds: string[]) => {
+    if (!window.confirm('Are you sure you want to delete this record?')) return;
+    setLoadingMode(true);
+    const { error } = await supabase.from('logs').delete().in('id', logIds);
+    if (error) {
+      alert('Delete failed: ' + error.message);
+    } else {
+      setLogs(prev => prev.filter(log => !logIds.includes(log.id)));
+    }
+    setLoadingMode(false);
+  };
+
   // Memoized pairing logic for UI & Exports
   const filteredAndPairedLogs = useMemo(() => {
     let filteredLogs = [...logs];
@@ -316,10 +334,11 @@ function App() {
     
     const sortedLogs = [...filteredLogs].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     const pairedData = [];
-    let currentPair: { date: string, timeIn: string, timeOut: string, rawIn: Date | null, rawOut: Date | null } | null = null;
+    let currentPair: { ids: string[], date: string, timeIn: string, timeOut: string, rawIn: Date | null, rawOut: Date | null } | null = null;
 
     const buildOutput = (pair: any) => {
       let totalHours = '-';
+      let hoursNum = 0;
       if (pair.rawIn && pair.rawOut) {
         let breakTimeMs = 0;
         const lunchStart = new Date(pair.rawIn);
@@ -342,16 +361,19 @@ function App() {
           finalHoursNum = 8;
         }
 
+        hoursNum = finalHoursNum;
         totalHours = Math.round(finalHoursNum).toString();
       }
       return {
         id: crypto.randomUUID(),
+        logIds: pair.ids,
         date: pair.date,
         timeIn: pair.timeIn,
         lunchOut: '12:00 PM',
         lunchIn: '01:00 PM',
         timeOut: pair.timeOut,
-        totalHours
+        totalHours,
+        hoursNum
       };
     };
 
@@ -364,28 +386,31 @@ function App() {
         if (currentPair) {
           pairedData.push(buildOutput(currentPair));
         }
-        currentPair = { date: dateStr, timeIn: timeStr, timeOut: '-', rawIn: logDate, rawOut: null };
+        currentPair = { ids: [log.id], date: dateStr, timeIn: timeStr, timeOut: '-', rawIn: logDate, rawOut: null };
       } else if (log.type === 'TIME_OUT') {
         if (currentPair && currentPair.date === dateStr) {
           currentPair.timeOut = timeStr;
           currentPair.rawOut = logDate;
+          currentPair.ids.push(log.id);
           pairedData.push(buildOutput(currentPair));
           currentPair = null;
         } else {
           if (currentPair) pairedData.push(buildOutput(currentPair));
-          pairedData.push(buildOutput({ date: dateStr, timeIn: '-', timeOut: timeStr, rawIn: null, rawOut: logDate }));
+          pairedData.push(buildOutput({ ids: [log.id], date: dateStr, timeIn: '-', timeOut: timeStr, rawIn: null, rawOut: logDate }));
           currentPair = null;
         }
       } else if (log.type === 'ABSENT' || log.type === 'HOLIDAY') {
         if (currentPair) pairedData.push(buildOutput(currentPair));
         pairedData.push({
           id: crypto.randomUUID(),
+          logIds: [log.id],
           date: dateStr,
           timeIn: log.type,
           lunchOut: '-',
           lunchIn: '-',
           timeOut: '-',
-          totalHours: '-'
+          totalHours: '-',
+          hoursNum: 0
         });
         currentPair = null;
       }
@@ -425,7 +450,8 @@ function App() {
             lunchOut: '-',
             lunchIn: '-',
             timeOut: '-',
-            totalHours: '-'
+            totalHours: '-',
+            hoursNum: 0
           });
         }
         cursor.setDate(cursor.getDate() + 1);
@@ -434,6 +460,13 @@ function App() {
 
     return finalData;
   }, [logs, exportStartDate, exportEndDate]);
+
+  const stats = useMemo(() => {
+    const total = filteredAndPairedLogs.reduce((acc, curr) => acc + (curr.hoursNum || 0), 0);
+    const goal = 540;
+    const remaining = Math.max(0, goal - total);
+    return { total: Math.round(total), remaining: Math.round(remaining), goal };
+  }, [filteredAndPairedLogs]);
 
   const exportCSV = () => {
     if (!currentUser) return;
@@ -631,6 +664,16 @@ function App() {
               </>
             )}
 
+            <div style={{ marginTop: '0.5rem', padding: '10px', background: 'rgba(79, 70, 229, 0.1)', borderRadius: '8px', border: '1px solid rgba(79, 70, 229, 0.2)' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--primary)', marginBottom: '4px' }}>How to Use:</div>
+              <ul style={{ fontSize: '0.7rem', color: 'var(--text-muted)', paddingLeft: '14px', margin: 0 }}>
+                <li>Select the <strong>Date</strong> you missed.</li>
+                <li>Choose <strong>Shift Log</strong> to add Time In/Out.</li>
+                <li>Use <strong>Absent/Holiday</strong> to mark an entire day as off.</li>
+                <li>You can add only 1 missing field (like just Time Out) if needed.</li>
+              </ul>
+            </div>
+
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
               <button type="button" className="btn btn-out" onClick={() => setShowManualEntry(false)}>
                 Cancel
@@ -680,9 +723,21 @@ function App() {
       {/* Right Column: History Panel */}
       <div className="glass-panel history-section">
         <div className="history-actions" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-          <div className="history-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2rem' }}>
+          <div className="history-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1.5rem' }}>
             <span>Your Records</span>
           </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '2rem' }}>
+            <div className="glass-panel" style={{ padding: '1.25rem', textAlign: 'center', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Total Hours</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--success)' }}>{stats.total} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>/ {stats.goal}h</span></div>
+            </div>
+            <div className="glass-panel" style={{ padding: '1.25rem', textAlign: 'center', border: '1px solid rgba(79, 70, 229, 0.2)' }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '0.25rem' }}>Remaining</div>
+              <div style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--primary)' }}>{stats.remaining} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>h</span></div>
+            </div>
+          </div>
+
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <input 
@@ -744,6 +799,7 @@ function App() {
               <div>L-In</div>
               <div>Time Out</div>
               <div>Hours</div>
+              <div></div>
             </div>
             {[...filteredAndPairedLogs].reverse().map((row) => (
               <div key={row.id} className="table-row">
@@ -760,6 +816,18 @@ function App() {
                 </div>
                 <div className="cell-time" style={{ fontWeight: 'bold' }}>
                   {row.totalHours !== '-' ? `${row.totalHours} h` : '-'}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  {row.logIds && row.logIds.length > 0 && (
+                    <button 
+                      onClick={() => handleDeleteDay(row.logIds)}
+                      className="btn-export" 
+                      style={{ padding: '4px', background: 'rgba(239, 68, 68, 0.1)', color: 'var(--danger)', border: 'none' }}
+                      title="Delete Record"
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
