@@ -645,6 +645,13 @@ function App() {
 
     const escapeCSV = (field: string) => `"${field.replace(/"/g, '""')}"`;
 
+    const displayName = currentUser.name || currentUser.username;
+    const firstDataDate = filteredAndPairedLogs[0].date;
+    const lastDataDate = filteredAndPairedLogs[filteredAndPairedLogs.length - 1].date;
+    const displayStart = (exportStartDate ? new Date(exportStartDate).toLocaleDateString() : firstDataDate).replace(/\//g, '-');
+    const displayEnd = (exportEndDate ? new Date(exportEndDate).toLocaleDateString() : lastDataDate).replace(/\//g, '-');
+    const fileName = `DTR_${displayName}_${displayStart}_to_${displayEnd}.csv`;
+
     const csvContent = [
       headers.map(escapeCSV).join(','),
       ...rows.map(row => row.map(escapeCSV).join(','))
@@ -655,7 +662,7 @@ function App() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `DTR_Export_${currentUser.username}_${new Date().getTime()}.csv`);
+    link.setAttribute('download', fileName);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
@@ -683,10 +690,13 @@ function App() {
 
     const firstDataDate = filteredAndPairedLogs[0].date;
     const lastDataDate = filteredAndPairedLogs[filteredAndPairedLogs.length - 1].date;
-    const displayStart = exportStartDate ? new Date(exportStartDate).toLocaleDateString() : firstDataDate;
-    const displayEnd = exportEndDate ? new Date(exportEndDate).toLocaleDateString() : lastDataDate;
+    const displayStartRaw = exportStartDate ? new Date(exportStartDate).toLocaleDateString() : firstDataDate;
+    const displayEndRaw = exportEndDate ? new Date(exportEndDate).toLocaleDateString() : lastDataDate;
+    
+    const displayStart = displayStartRaw.replace(/\//g, '-');
+    const displayEnd = displayEndRaw.replace(/\//g, '-');
 
-    doc.text(`Period: ${displayStart} to ${displayEnd}`, 14, 39);
+    doc.text(`Period: ${displayStartRaw} to ${displayEndRaw}`, 14, 39);
 
     const tableData = filteredAndPairedLogs.map(row => [row.date, row.timeIn, row.lunchOut, row.lunchIn, row.timeOut, row.totalHours]);
 
@@ -715,7 +725,7 @@ function App() {
       }
     });
 
-    doc.save(`DTR_Export_${currentUser.username}_${new Date().getTime()}.pdf`);
+    doc.save(`DTR_${displayName}_${displayStart}_to_${displayEnd}.pdf`);
   };
 
   if (!currentUser) {
