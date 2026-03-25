@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { supabase } from './supabase';
@@ -47,6 +47,12 @@ const TrashIcon = () => (
   </svg>
 );
 
+const FilterIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+  </svg>
+);
+
 // Types
 type Status = 'OUT' | 'IN';
 type LogType = 'TIME_IN' | 'TIME_OUT' | 'ABSENT' | 'HOLIDAY';
@@ -61,8 +67,133 @@ interface Log {
 interface User {
   id: string;
   username: string;
-  name: string;
+  name: string; 
 }
+
+const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange: (val: string) => void, label: string }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [viewDate, setViewDate] = useState(value ? new Date(value) : new Date());
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  const daysInMonth = (month: number, year: number) => new Date(year, month + 1, 0).getDate();
+  const firstDayOfMonth = (month: number, year: number) => new Date(year, month, 1).getDay();
+
+  const handleDateSelect = (day: number) => {
+    const selected = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+    onChange(selected.toISOString().split('T')[0]);
+    setIsOpen(false);
+  };
+
+  const changeMonth = (offset: number) => {
+    const next = new Date(viewDate.getFullYear(), viewDate.getMonth() + offset, 1);
+    setViewDate(next);
+  };
+
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+  return (
+    <div ref={pickerRef} style={{ position: 'relative', width: '100%' }}>
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        className="date-input"
+        style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '44px' }}
+      >
+        <span>{value ? new Date(value).toLocaleDateString() : label}</span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      </div>
+
+      {isOpen && (
+        <>
+          {windowWidth < 768 && <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.2)', zIndex: 9998, backdropFilter: 'blur(2px)' }} onClick={() => setIsOpen(false)} />}
+          <div 
+            className="glass-panel" 
+            style={{ 
+              position: windowWidth < 768 ? 'fixed' : 'absolute', 
+              top: windowWidth < 768 ? '50%' : '105%', 
+              left: '50%',
+              transform: windowWidth < 768 ? 'translate(-50%, -50%)' : 'translateX(-50%)',
+              zIndex: 9999, 
+              padding: '1.25rem', 
+              width: '300px',
+              maxWidth: 'calc(100vw - 2rem)',
+              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.4)', 
+              border: '1px solid rgba(255,255,255,0.15)',
+              background: 'rgba(30, 41, 59, 0.75)',
+              backdropFilter: 'blur(12px)',
+              pointerEvents: 'auto'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{monthNames[viewDate.getMonth()]} {viewDate.getFullYear()}</span>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button type="button" onClick={() => changeMonth(-1)} className="btn-export" style={{ padding: '4px' }}>←</button>
+                <button type="button" onClick={() => changeMonth(1)} className="btn-export" style={{ padding: '4px' }}>→</button>
+              </div>
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+              {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d}>{d}</div>)}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
+              {Array.from({ length: firstDayOfMonth(viewDate.getMonth(), viewDate.getFullYear()) }).map((_, i) => (
+                <div key={`empty-${i}`} />
+              ))}
+              {Array.from({ length: daysInMonth(viewDate.getMonth(), viewDate.getFullYear()) }).map((_, i) => {
+                const day = i + 1;
+                const isToday = new Date().toDateString() === new Date(viewDate.getFullYear(), viewDate.getMonth(), day).toDateString();
+                const isSelected = value === new Date(viewDate.getFullYear(), viewDate.getMonth(), day).toISOString().split('T')[0];
+                
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => handleDateSelect(day)}
+                    style={{
+                      padding: '8px 0',
+                      border: 'none',
+                      borderRadius: '4px',
+                      background: isSelected ? 'var(--primary)' : isToday ? 'rgba(79, 70, 229, 0.2)' : 'transparent',
+                      color: isSelected ? 'white' : 'var(--text-main)',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {day}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: '1rem', paddingTop: '0.5rem' }}>
+              <button type="button" onClick={() => { onChange(''); setIsOpen(false); }} className="btn-export" style={{ border: 'none', color: 'var(--danger)', fontSize: '0.8rem' }}>Clear</button>
+              <button type="button" onClick={() => { handleDateSelect(new Date().getDate()); setViewDate(new Date()); }} className="btn-export" style={{ border: 'none', color: 'var(--primary)', fontSize: '0.8rem' }}>Today</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 function App() {
   // Authentication & Users State
@@ -78,6 +209,8 @@ function App() {
   const [logs, setLogs] = useState<Log[]>([]);
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
 
   // Manual Entry State
   const [showManualEntry, setShowManualEntry] = useState(false);
@@ -85,6 +218,18 @@ function App() {
   const [manualDate, setManualDate] = useState('');
   const [manualTimeIn, setManualTimeIn] = useState('');
   const [manualTimeOut, setManualTimeOut] = useState('');
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target as Node)) {
+        setShowFilterMenu(false);
+      }
+    };
+    if (showFilterMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showFilterMenu]);
 
   // Session persistence across reloads via localStorage auth token mapping
   useEffect(() => {
@@ -486,6 +631,8 @@ function App() {
     };
   }, [filteredAndPairedLogs]);
 
+
+
   const exportCSV = () => {
     if (!currentUser) return;
     if (filteredAndPairedLogs.length === 0) {
@@ -549,8 +696,23 @@ function App() {
       head: [['Date', 'Time In', 'L-Out', 'L-In', 'Time Out', 'Hours']],
       body: tableData,
       theme: 'grid',
-      headStyles: { fillColor: [79, 70, 229] },
-      alternateRowStyles: { fillColor: [241, 245, 249] },
+      headStyles: { fillColor: [79, 70, 229] }, // Indigo
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      willDrawCell: (data) => {
+        if (data.section === 'body') {
+          const rowVal = data.row.cells[1].text[0]; // Check Time In column
+          if (rowVal === 'ABSENT') {
+            doc.setFillColor(254, 226, 226); // Soft Red
+            doc.setTextColor(220, 38, 38);   // Dark Red
+          } else if (rowVal === 'HOLIDAY') {
+            doc.setFillColor(254, 243, 199); // Soft Amber
+            doc.setTextColor(217, 119, 6);   // Dark Amber
+          } else if (rowVal === 'REST DAY') {
+            doc.setFillColor(237, 233, 254); // Soft Purple
+            doc.setTextColor(109, 40, 217);  // Dark Purple
+          }
+        }
+      }
     });
 
     doc.save(`DTR_Export_${currentUser.username}_${new Date().getTime()}.pdf`);
@@ -661,7 +823,11 @@ function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Date <span style={{ color: 'var(--danger)' }}>*</span></label>
-              <input type="date" className="date-input" value={manualDate} onChange={e => setManualDate(e.target.value)} required max={new Date().toISOString().split('T')[0]} />
+              <CustomDatePicker 
+                value={manualDate} 
+                onChange={setManualDate} 
+                label="Select Date" 
+              />
             </div>
 
             {manualType === 'SHIFT' && (
@@ -756,25 +922,92 @@ function App() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <input
-                type="date"
-                className="date-input"
-                value={exportStartDate}
-                onChange={e => setExportStartDate(e.target.value)}
-                title="Start Date"
-              />
-              <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>to</span>
-              <input
-                type="date"
-                className="date-input"
-                value={exportEndDate}
-                onChange={e => setExportEndDate(e.target.value)}
-                title="End Date"
-              />
-            </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', position: 'relative' }} ref={filterMenuRef}>
+              <button 
+                className="btn-export" 
+                onClick={() => setShowFilterMenu(!showFilterMenu)}
+                style={{ margin: 0, backgroundColor: 'rgba(79, 70, 229, 0.15)', color: 'var(--primary)', borderColor: 'rgba(79, 70, 229, 0.25)' }}
+              >
+                <FilterIcon />
+                Filter
+              </button>
+
+              {showFilterMenu && (
+                <div className="glass-panel" style={{ 
+                  position: 'absolute', 
+                  top: '110%', 
+                  right: 0, 
+                  zIndex: 2000, 
+                  padding: '1rem', 
+                  width: '280px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '1rem',
+                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.4)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  background: 'rgba(30, 41, 59, 0.75)',
+                  backdropFilter: 'blur(12px)'
+                }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Search Single Date</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <CustomDatePicker 
+                      value={exportStartDate === exportEndDate ? exportStartDate : ''} 
+                      onChange={(val) => {
+                        setExportStartDate(val);
+                        setExportEndDate(val);
+                        setShowFilterMenu(false);
+                      }} 
+                      label="Find Date..." 
+                    />
+                  </div>
+
+                  <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '0.25rem 0' }} />
+                  
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Custom Range</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Start Date</label>
+                      <CustomDatePicker 
+                        value={exportStartDate} 
+                        onChange={setExportStartDate} 
+                        label="Select Start" 
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>End Date</label>
+                      <CustomDatePicker 
+                        value={exportEndDate} 
+                        onChange={setExportEndDate} 
+                        label="Select End" 
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '0.25rem 0' }} />
+
+                  <button
+                    onClick={() => {
+                      setExportStartDate('');
+                      setExportEndDate('');
+                      setShowFilterMenu(false);
+                    }}
+                    style={{
+                      padding: '8px',
+                      background: 'rgba(239, 68, 68, 0.1)',
+                      border: 'none',
+                      color: 'var(--danger)',
+                      borderRadius: '6px',
+                      cursor: 'pointer',
+                      fontSize: '0.75rem',
+                      fontWeight: 600
+                    }}
+                  >
+                    Reset Filters
+                  </button>
+                </div>
+              )}
+
               <button
                 className="btn-export"
                 onClick={exportCSV}
@@ -820,9 +1053,18 @@ function App() {
               <div></div>
             </div>
             {[...filteredAndPairedLogs].reverse().map((row) => (
-              <div key={row.id} className="table-row">
+              <div key={row.id} className={`table-row ${
+                row.timeIn === 'ABSENT' ? 'row-absent' : 
+                row.timeIn === 'HOLIDAY' ? 'row-holiday' : 
+                row.timeIn === 'REST DAY' ? 'row-rest' : ''
+              }`}>
                 <div className="cell-date">{row.date}</div>
-                <div className={`cell-time ${row.timeIn !== '-' ? 'active' : ''}`}>
+                <div className={`cell-time ${
+                  row.timeIn === 'ABSENT' ? 'cell-absent' : 
+                  row.timeIn === 'HOLIDAY' ? 'cell-holiday' : 
+                  row.timeIn === 'REST DAY' ? 'cell-rest' : 
+                  row.timeIn !== '-' ? 'active' : ''
+                }`}>
                   {row.timeIn}
                 </div>
                 <div className="cell-time">{row.lunchOut}</div>

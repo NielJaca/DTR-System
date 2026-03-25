@@ -368,6 +368,54 @@ body {
   color: var(--danger);
 }
 
+.row-absent {
+  background: rgba(239, 68, 68, 0.15) !important;
+  border-left: 4px solid var(--danger);
+}
+
+.row-holiday {
+  background: rgba(251, 191, 36, 0.15) !important;
+  border-left: 4px solid #fbbf24;
+}
+
+.row-rest {
+  background: rgba(167, 139, 250, 0.15) !important;
+  border-left: 4px solid #a78bfa;
+}
+
+.cell-absent {
+  color: #ff4d4d !important;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.cell-holiday {
+  color: #fbbf24 !important;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.cell-rest {
+  color: #a78bfa !important;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.row-absent {
+  background: rgba(255, 77, 77, 0.08) !important;
+  border-left: 4px solid #ff4d4d;
+}
+
+.row-holiday {
+  background: rgba(251, 191, 36, 0.08) !important;
+  border-left: 4px solid #fbbf24;
+}
+
+.row-rest {
+  background: rgba(167, 139, 250, 0.08) !important;
+  border-left: 4px solid #a78bfa;
+}
+
 .cell-timeout {
   color: var(--danger);
   font-weight: 500;
