@@ -76,6 +76,16 @@ const parseLocalDate = (dateStr: string) => {
   return new Date(y, m - 1, d);
 };
 
+const formatHM = (totalHoursFraction: number) => {
+  let h = Math.floor(totalHoursFraction);
+  let m = Math.round((totalHoursFraction - h) * 60);
+  if (m === 60) {
+    h += 1;
+    m = 0;
+  }
+  return { h, m, formatted: `${h}h ${m}m` };
+};
+
 const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange: (val: string) => void, label: string }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(value ? parseLocalDate(value) : new Date());
@@ -527,11 +537,9 @@ function App() {
           finalHoursNum = 8;
         }
 
-        const h = Math.floor(workMs / (1000 * 60 * 60));
-        const m = Math.floor((workMs % (1000 * 60 * 60)) / (1000 * 60));
-
-        hoursNum = workMs / (1000 * 60 * 60);
-        totalHours = `${h}h ${m}m`;
+        const formatted = formatHM(finalHoursNum);
+        hoursNum = finalHoursNum;
+        totalHours = formatted.formatted;
       }
       return {
         id: crypto.randomUUID(),
@@ -635,15 +643,13 @@ function App() {
     const goal = 540;
     const remainingRaw = Math.max(0, goal - totalRaw);
     
-    const hT = Math.floor(totalRaw);
-    const mT = Math.round((totalRaw - hT) * 60);
-    const hR = Math.floor(remainingRaw);
-    const mR = Math.round((remainingRaw - hR) * 60);
+    const totalStats = formatHM(totalRaw);
+    const remainingStats = formatHM(remainingRaw);
 
     return { 
-      total: Math.floor(totalRaw), 
-      formattedTotal: `${hT}h ${mT}m`,
-      formattedRemaining: `${hR}h ${mR}m`,
+      total: totalStats.h, 
+      formattedTotal: totalStats.formatted,
+      formattedRemaining: remainingStats.formatted,
       goal 
     };
   }, [filteredAndPairedLogs]);
