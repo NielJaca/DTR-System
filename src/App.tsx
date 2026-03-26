@@ -70,9 +70,15 @@ interface User {
   name: string; 
 }
 
+const parseLocalDate = (dateStr: string) => {
+  if (!dateStr) return new Date();
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
 const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange: (val: string) => void, label: string }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [viewDate, setViewDate] = useState(value ? new Date(value) : new Date());
+  const [viewDate, setViewDate] = useState(value ? parseLocalDate(value) : new Date());
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const pickerRef = useRef<HTMLDivElement>(null);
 
@@ -98,8 +104,10 @@ const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange:
   const firstDayOfMonth = (month: number, year: number) => new Date(year, month, 1).getDay();
 
   const handleDateSelect = (day: number) => {
-    const selected = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-    onChange(selected.toISOString().split('T')[0]);
+    const y = viewDate.getFullYear();
+    const m = String(viewDate.getMonth() + 1).padStart(2, '0');
+    const d = String(day).padStart(2, '0');
+    onChange(`${y}-${m}-${d}`);
     setIsOpen(false);
   };
 
@@ -117,7 +125,7 @@ const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange:
         className="date-input"
         style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '44px' }}
       >
-        <span>{value ? new Date(value).toLocaleDateString() : label}</span>
+        <span>{value ? parseLocalDate(value).toLocaleDateString() : label}</span>
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
       </div>
 
@@ -161,7 +169,8 @@ const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange:
               {Array.from({ length: daysInMonth(viewDate.getMonth(), viewDate.getFullYear()) }).map((_, i) => {
                 const day = i + 1;
                 const isToday = new Date().toDateString() === new Date(viewDate.getFullYear(), viewDate.getMonth(), day).toDateString();
-                const isSelected = value === new Date(viewDate.getFullYear(), viewDate.getMonth(), day).toISOString().split('T')[0];
+                const dateStr = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isSelected = value === dateStr;
                 
                 return (
                   <button
@@ -186,7 +195,15 @@ const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange:
 
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: '1rem', paddingTop: '0.5rem' }}>
               <button type="button" onClick={() => { onChange(''); setIsOpen(false); }} className="btn-export" style={{ border: 'none', color: 'var(--danger)', fontSize: '0.8rem' }}>Clear</button>
-              <button type="button" onClick={() => { handleDateSelect(new Date().getDate()); setViewDate(new Date()); }} className="btn-export" style={{ border: 'none', color: 'var(--primary)', fontSize: '0.8rem' }}>Today</button>
+              <button type="button" onClick={() => { 
+                const now = new Date();
+                const yy = now.getFullYear();
+                const mm = String(now.getMonth() + 1).padStart(2, '0');
+                const dd = String(now.getDate()).padStart(2, '0');
+                onChange(`${yy}-${mm}-${dd}`);
+                setViewDate(now);
+                setIsOpen(false);
+              }} className="btn-export" style={{ border: 'none', color: 'var(--primary)', fontSize: '0.8rem' }}>Today</button>
             </div>
           </div>
         </>
@@ -467,12 +484,12 @@ function App() {
   const filteredAndPairedLogs = useMemo(() => {
     let filteredLogs = [...logs];
     if (exportStartDate) {
-      const start = new Date(exportStartDate);
+      const start = parseLocalDate(exportStartDate);
       start.setHours(0, 0, 0, 0);
       filteredLogs = filteredLogs.filter(log => new Date(log.timestamp) >= start);
     }
     if (exportEndDate) {
-      const end = new Date(exportEndDate);
+      const end = parseLocalDate(exportEndDate);
       end.setHours(23, 59, 59, 999);
       filteredLogs = filteredLogs.filter(log => new Date(log.timestamp) <= end);
     }
@@ -574,10 +591,10 @@ function App() {
     // Auto-fill missing days with 'Absent / Holiday'
     const finalData: any[] = [];
     const minRawDate = sortedLogs.length > 0 ? new Date(sortedLogs[0].timestamp) : null;
-    const start = exportStartDate ? new Date(exportStartDate) : minRawDate;
+    const start = exportStartDate ? parseLocalDate(exportStartDate) : minRawDate;
 
     // Always stop at today natively unless exportEndDate is earlier
-    const end = exportEndDate ? new Date(exportEndDate) : new Date();
+    const end = exportEndDate ? parseLocalDate(exportEndDate) : new Date();
 
     if (start && end) {
       start.setHours(0, 0, 0, 0);
@@ -648,8 +665,8 @@ function App() {
     const displayName = currentUser.name || currentUser.username;
     const firstDataDate = filteredAndPairedLogs[0].date;
     const lastDataDate = filteredAndPairedLogs[filteredAndPairedLogs.length - 1].date;
-    const displayStart = (exportStartDate ? new Date(exportStartDate).toLocaleDateString() : firstDataDate).replace(/\//g, '-');
-    const displayEnd = (exportEndDate ? new Date(exportEndDate).toLocaleDateString() : lastDataDate).replace(/\//g, '-');
+    const displayStart = (exportStartDate ? parseLocalDate(exportStartDate).toLocaleDateString() : firstDataDate).replace(/\//g, '-');
+    const displayEnd = (exportEndDate ? parseLocalDate(exportEndDate).toLocaleDateString() : lastDataDate).replace(/\//g, '-');
     const fileName = `DTR_${displayName}_${displayStart}_to_${displayEnd}.csv`;
 
     const csvContent = [
@@ -690,8 +707,8 @@ function App() {
 
     const firstDataDate = filteredAndPairedLogs[0].date;
     const lastDataDate = filteredAndPairedLogs[filteredAndPairedLogs.length - 1].date;
-    const displayStartRaw = exportStartDate ? new Date(exportStartDate).toLocaleDateString() : firstDataDate;
-    const displayEndRaw = exportEndDate ? new Date(exportEndDate).toLocaleDateString() : lastDataDate;
+    const displayStartRaw = exportStartDate ? parseLocalDate(exportStartDate).toLocaleDateString() : firstDataDate;
+    const displayEndRaw = exportEndDate ? parseLocalDate(exportEndDate).toLocaleDateString() : lastDataDate;
     
     const displayStart = displayStartRaw.replace(/\//g, '-');
     const displayEnd = displayEndRaw.replace(/\//g, '-');
