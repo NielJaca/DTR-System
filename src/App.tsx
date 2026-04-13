@@ -67,7 +67,7 @@ interface Log {
 interface User {
   id: string;
   username: string;
-  name: string; 
+  name: string;
 }
 
 const parseLocalDate = (dateStr: string) => {
@@ -97,7 +97,7 @@ const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange:
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-  
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (pickerRef.current && !pickerRef.current.contains(event.target as Node)) {
@@ -130,30 +130,30 @@ const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange:
 
   return (
     <div ref={pickerRef} style={{ position: 'relative', width: '100%' }}>
-      <div 
+      <div
         onClick={() => setIsOpen(!isOpen)}
         className="date-input"
         style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', minHeight: '44px' }}
       >
         <span>{value ? parseLocalDate(value).toLocaleDateString() : label}</span>
-        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
       </div>
 
       {isOpen && (
         <>
           {windowWidth < 768 && <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.2)', zIndex: 9998, backdropFilter: 'blur(2px)' }} onClick={() => setIsOpen(false)} />}
-          <div 
-            className="glass-panel" 
-            style={{ 
-              position: windowWidth < 768 ? 'fixed' : 'absolute', 
-              top: windowWidth < 768 ? '50%' : '105%', 
+          <div
+            className="glass-panel"
+            style={{
+              position: windowWidth < 768 ? 'fixed' : 'absolute',
+              top: windowWidth < 768 ? '50%' : '105%',
               left: '50%',
               transform: windowWidth < 768 ? 'translate(-50%, -50%)' : 'translateX(-50%)',
-              zIndex: 9999, 
-              padding: '1.25rem', 
+              zIndex: 9999,
+              padding: '1.25rem',
               width: '300px',
               maxWidth: 'calc(100vw - 2rem)',
-              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.4)', 
+              boxShadow: '0 10px 25px -5px rgba(0,0,0,0.4)',
               border: '1px solid rgba(255,255,255,0.15)',
               background: 'rgba(30, 41, 59, 0.75)',
               backdropFilter: 'blur(12px)',
@@ -167,9 +167,9 @@ const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange:
                 <button type="button" onClick={() => changeMonth(1)} className="btn-export" style={{ padding: '4px' }}>→</button>
               </div>
             </div>
-            
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
-              {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d}>{d}</div>)}
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => <div key={d}>{d}</div>)}
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px' }}>
@@ -181,7 +181,7 @@ const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange:
                 const isToday = new Date().toDateString() === new Date(viewDate.getFullYear(), viewDate.getMonth(), day).toDateString();
                 const dateStr = `${viewDate.getFullYear()}-${String(viewDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                 const isSelected = value === dateStr;
-                
+
                 return (
                   <button
                     key={day}
@@ -205,7 +205,7 @@ const CustomDatePicker = ({ value, onChange, label }: { value: string, onChange:
 
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.1)', marginTop: '1rem', paddingTop: '0.5rem' }}>
               <button type="button" onClick={() => { onChange(''); setIsOpen(false); }} className="btn-export" style={{ border: 'none', color: 'var(--danger)', fontSize: '0.8rem' }}>Clear</button>
-              <button type="button" onClick={() => { 
+              <button type="button" onClick={() => {
                 const now = new Date();
                 const yy = now.getFullYear();
                 const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -236,6 +236,8 @@ function App() {
   const [logs, setLogs] = useState<Log[]>([]);
   const [exportStartDate, setExportStartDate] = useState('');
   const [exportEndDate, setExportEndDate] = useState('');
+  const [filterAbsent, setFilterAbsent] = useState(false);
+  const [filterHoliday, setFilterHoliday] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const filterMenuRef = useRef<HTMLDivElement>(null);
 
@@ -527,7 +529,7 @@ function App() {
 
         const nineAM = new Date(pair.rawIn);
         nineAM.setHours(9, 0, 0, 0);
-        
+
         const effectiveIn = Math.max(pair.rawIn.getTime(), nineAM.getTime());
         const workMs = Math.max(0, pair.rawOut.getTime() - effectiveIn - breakTimeMs);
         let finalHoursNum = workMs / (1000 * 60 * 60);
@@ -635,22 +637,31 @@ function App() {
       }
     }
 
-    return finalData;
-  }, [logs, exportStartDate, exportEndDate]);
+    let filteredResult = finalData;
+    if (filterAbsent || filterHoliday) {
+      filteredResult = filteredResult.filter(r => {
+        const isAbsent = r.timeIn === 'ABSENT';
+        const isHoliday = r.timeIn === 'HOLIDAY';
+        return (filterAbsent && isAbsent) || (filterHoliday && isHoliday);
+      });
+    }
+
+    return filteredResult;
+  }, [logs, exportStartDate, exportEndDate, filterAbsent, filterHoliday]);
 
   const stats = useMemo(() => {
     const totalRaw = filteredAndPairedLogs.reduce((acc, curr) => acc + (curr.hoursNum || 0), 0);
     const goal = 540;
     const remainingRaw = Math.max(0, goal - totalRaw);
-    
+
     const totalStats = formatHM(totalRaw);
     const remainingStats = formatHM(remainingRaw);
 
-    return { 
-      total: totalStats.h, 
+    return {
+      total: totalStats.h,
       formattedTotal: totalStats.formatted,
       formattedRemaining: remainingStats.formatted,
-      goal 
+      goal
     };
   }, [filteredAndPairedLogs]);
 
@@ -715,7 +726,7 @@ function App() {
     const lastDataDate = filteredAndPairedLogs[filteredAndPairedLogs.length - 1].date;
     const displayStartRaw = exportStartDate ? parseLocalDate(exportStartDate).toLocaleDateString() : firstDataDate;
     const displayEndRaw = exportEndDate ? parseLocalDate(exportEndDate).toLocaleDateString() : lastDataDate;
-    
+
     const displayStart = displayStartRaw.replace(/\//g, '-');
     const displayEnd = displayEndRaw.replace(/\//g, '-');
 
@@ -856,10 +867,10 @@ function App() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
               <label style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Date <span style={{ color: 'var(--danger)' }}>*</span></label>
-              <CustomDatePicker 
-                value={manualDate} 
-                onChange={setManualDate} 
-                label="Select Date" 
+              <CustomDatePicker
+                value={manualDate}
+                onChange={setManualDate}
+                label="Select Date"
               />
             </div>
 
@@ -957,8 +968,8 @@ function App() {
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
             <div style={{ display: 'flex', gap: '0.5rem', position: 'relative' }} ref={filterMenuRef}>
-              <button 
-                className="btn-export" 
+              <button
+                className="btn-export"
                 onClick={() => setShowFilterMenu(!showFilterMenu)}
                 style={{ margin: 0, backgroundColor: 'rgba(79, 70, 229, 0.15)', color: 'var(--primary)', borderColor: 'rgba(79, 70, 229, 0.25)' }}
               >
@@ -967,12 +978,12 @@ function App() {
               </button>
 
               {showFilterMenu && (
-                <div className="glass-panel" style={{ 
-                  position: 'absolute', 
-                  top: '110%', 
-                  right: 0, 
-                  zIndex: 2000, 
-                  padding: '1rem', 
+                <div className="glass-panel" style={{
+                  position: 'absolute',
+                  top: '110%',
+                  right: 0,
+                  zIndex: 2000,
+                  padding: '1rem',
                   width: '280px',
                   display: 'flex',
                   flexDirection: 'column',
@@ -984,37 +995,79 @@ function App() {
                 }}>
                   <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Search Single Date</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <CustomDatePicker 
-                      value={exportStartDate === exportEndDate ? exportStartDate : ''} 
+                    <CustomDatePicker
+                      value={exportStartDate === exportEndDate ? exportStartDate : ''}
                       onChange={(val) => {
                         setExportStartDate(val);
                         setExportEndDate(val);
                         setShowFilterMenu(false);
-                      }} 
-                      label="Find Date..." 
+                      }}
+                      label="Find Date..."
                     />
                   </div>
 
                   <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '0.25rem 0' }} />
-                  
+
                   <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Custom Range</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Start Date</label>
-                      <CustomDatePicker 
-                        value={exportStartDate} 
-                        onChange={setExportStartDate} 
-                        label="Select Start" 
+                      <CustomDatePicker
+                        value={exportStartDate}
+                        onChange={setExportStartDate}
+                        label="Select Start"
                       />
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                       <label style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>End Date</label>
-                      <CustomDatePicker 
-                        value={exportEndDate} 
-                        onChange={setExportEndDate} 
-                        label="Select End" 
+                      <CustomDatePicker
+                        value={exportEndDate}
+                        onChange={setExportEndDate}
+                        label="Select End"
                       />
                     </div>
+                  </div>
+
+                  <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '0.25rem 0' }} />
+
+                  <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Filter by Status</div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => setFilterAbsent(!filterAbsent)}
+                      style={{
+                        flex: 1,
+                        padding: '8px',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        background: filterAbsent ? '#ef4444' : 'rgba(239, 68, 68, 0.1)',
+                        color: filterAbsent ? '#ffffff' : '#ef4444',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      Absent Only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFilterHoliday(!filterHoliday)}
+                      style={{
+                        flex: 1,
+                        padding: '8px',
+                        border: 'none',
+                        borderRadius: '6px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        background: filterHoliday ? '#f59e0b' : 'rgba(245, 158, 11, 0.1)',
+                        color: filterHoliday ? '#ffffff' : '#f59e0b',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      Holiday Only
+                    </button>
                   </div>
 
                   <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '0.25rem 0' }} />
@@ -1023,6 +1076,8 @@ function App() {
                     onClick={() => {
                       setExportStartDate('');
                       setExportEndDate('');
+                      setFilterAbsent(false);
+                      setFilterHoliday(false);
                       setShowFilterMenu(false);
                     }}
                     style={{
@@ -1086,18 +1141,16 @@ function App() {
               <div></div>
             </div>
             {[...filteredAndPairedLogs].reverse().map((row) => (
-              <div key={row.id} className={`table-row ${
-                row.timeIn === 'ABSENT' ? 'row-absent' : 
-                row.timeIn === 'HOLIDAY' ? 'row-holiday' : 
-                row.timeIn === 'REST DAY' ? 'row-rest' : ''
-              }`}>
-                <div className="cell-date">{row.date}</div>
-                <div className={`cell-time ${
-                  row.timeIn === 'ABSENT' ? 'cell-absent' : 
-                  row.timeIn === 'HOLIDAY' ? 'cell-holiday' : 
-                  row.timeIn === 'REST DAY' ? 'cell-rest' : 
-                  row.timeIn !== '-' ? 'active' : ''
+              <div key={row.id} className={`table-row ${row.timeIn === 'ABSENT' ? 'row-absent' :
+                row.timeIn === 'HOLIDAY' ? 'row-holiday' :
+                  row.timeIn === 'REST DAY' ? 'row-rest' : ''
                 }`}>
+                <div className="cell-date">{row.date}</div>
+                <div className={`cell-time ${row.timeIn === 'ABSENT' ? 'cell-absent' :
+                  row.timeIn === 'HOLIDAY' ? 'cell-holiday' :
+                    row.timeIn === 'REST DAY' ? 'cell-rest' :
+                      row.timeIn !== '-' ? 'active' : ''
+                  }`}>
                   {row.timeIn}
                 </div>
                 <div className="cell-time">{row.lunchOut}</div>
